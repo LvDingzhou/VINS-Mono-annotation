@@ -8,12 +8,17 @@ InitialEXRotation::InitialEXRotation(){
     ric = Matrix3d::Identity();
 }
 
+/// @brief 初始化旋转外参
+/// @param corres 前后两帧匹配的feature
+/// @param delta_q_imu 预积分得到的imu旋转变量
+/// @param calib_ric_result 
+/// @return 
 bool InitialEXRotation::CalibrationExRotation(vector<pair<Vector3d, Vector3d>> corres, Quaterniond delta_q_imu, Matrix3d &calib_ric_result)
 {
     frame_count++;
     Rc.push_back(solveRelativeR(corres));
     Rimu.push_back(delta_q_imu.toRotationMatrix());
-    Rc_g.push_back(ric.inverse() * delta_q_imu * ric);
+    Rc_g.push_back(ric.inverse() * delta_q_imu * ric);//ric=rotation from cam to imu
 
     Eigen::MatrixXd A(frame_count * 4, 4);
     A.setZero();
@@ -27,13 +32,15 @@ bool InitialEXRotation::CalibrationExRotation(vector<pair<Vector3d, Vector3d>> c
         ROS_DEBUG(
             "%d %f", i, angular_distance);
 
+        //核函数，三目运算符"(条件)?条件成立时的取值:条件不成立时的取值"
         double huber = angular_distance > 5.0 ? 5.0 / angular_distance : 1.0;
         ++sum_ok;
         Matrix4d L, R;
 
-        double w = Quaterniond(Rc[i]).w();
-        Vector3d q = Quaterniond(Rc[i]).vec();
-        L.block<3, 3>(0, 0) = w * Matrix3d::Identity() + Utility::skewSymmetric(q);
+        //将四元数转换为旋转矩阵
+        double w = Quaterniond(Rc[i]).w();//四元数实部
+        Vector3d q = Quaterniond(Rc[i]).vec();//四元数虚部
+        L.block<3, 3>(0, 0) = w * Matrix3d::Identity() + Utility::skewSymmetric(q);//skewSymmetric是反对称矩阵
         L.block<3, 1>(0, 3) = q;
         L.block<1, 3>(3, 0) = -q.transpose();
         L(3, 3) = w;
@@ -46,17 +53,20 @@ bool InitialEXRotation::CalibrationExRotation(vector<pair<Vector3d, Vector3d>> c
         R.block<1, 3>(3, 0) = -q.transpose();
         R(3, 3) = w;
 
-        A.block<4, 4>((i - 1) * 4, 0) = huber * (L - R);
+        A.block<4, 4>((i - 1) * 4, 0) = huber * (L - R);//四元数旋转之差
     }
 
     JacobiSVD<MatrixXd> svd(A, ComputeFullU | ComputeFullV);
     Matrix<double, 4, 1> x = svd.matrixV().col(3);
-    Quaterniond estimated_R(x);
+    Quaterniond estimated_R(x);//四元数的构造函数
     ric = estimated_R.toRotationMatrix().inverse();
     //cout << svd.singularValues().transpose() << endl;
     //cout << ric << endl;
     Vector3d ric_cov;
     ric_cov = svd.singularValues().tail<3>();
+    //倒数第二个奇异值（不是倒三吗），因为旋转式3个自由度，因此检查一下第三小的奇异值是否足够大
+    //通常需要足够的运动激励才能保证得到没有奇异的解
+    //注意到`frame_count`每次进入函数的时候都会有累加
     if (frame_count >= WINDOW_SIZE && ric_cov(1) > 0.25)
     {
         calib_ric_result = ric;
@@ -78,6 +88,7 @@ Matrix3d InitialEXRotation::solveRelativeR(const vector<pair<Vector3d, Vector3d>
         }
         cv::Mat E = cv::findFundamentalMat(ll, rr);
         cv::Mat_<double> R1, R2, t1, t2;
+        //对E矩阵奇异值分解
         decomposeE(E, R1, R2, t1, t2);
 
         if (determinant(R1) + 1.0 < 1e-09)
@@ -89,6 +100,7 @@ Matrix3d InitialEXRotation::solveRelativeR(const vector<pair<Vector3d, Vector3d>
         double ratio2 = max(testTriangulation(ll, rr, R2, t1), testTriangulation(ll, rr, R2, t2));
         cv::Mat_<double> ans_R_cv = ratio1 > ratio2 ? R1 : R2;
 
+        //解出来的是R21，所以需要将R转置一下
         Matrix3d ans_R_eigen;
         for (int i = 0; i < 3; i++)
             for (int j = 0; j < 3; j++)
@@ -113,10 +125,13 @@ double InitialEXRotation::testTriangulation(const vector<cv::Point2f> &l,
     int front_count = 0;
     for (int i = 0; i < pointcloud.cols; i++)
     {
+        
         double normal_factor = pointcloud.col(i).at<float>(3);
 
+        //将3d点转换到相机坐标系下
         cv::Mat_<double> p_3d_l = cv::Mat(P) * (pointcloud.col(i) / normal_factor);
         cv::Mat_<double> p_3d_r = cv::Mat(P1) * (pointcloud.col(i) / normal_factor);
+        //找到相机坐标系下3d点坐标中深度大于零的解
         if (p_3d_l(2) > 0 && p_3d_r(2) > 0)
             front_count++;
     }
@@ -124,6 +139,12 @@ double InitialEXRotation::testTriangulation(const vector<cv::Point2f> &l,
     return 1.0 * front_count / pointcloud.cols;
 }
 
+/// @brief 多视角几何的证明
+/// @param E 
+/// @param R1 
+/// @param R2 
+/// @param t1 
+/// @param t2 
 void InitialEXRotation::decomposeE(cv::Mat E,
                                  cv::Mat_<double> &R1, cv::Mat_<double> &R2,
                                  cv::Mat_<double> &t1, cv::Mat_<double> &t2)

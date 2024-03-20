@@ -51,9 +51,9 @@ void readParameters(ros::NodeHandle &n)
 
     fsSettings["imu_topic"] >> IMU_TOPIC;
 
-    SOLVER_TIME = fsSettings["max_solver_time"];
-    NUM_ITERATIONS = fsSettings["max_num_iterations"];
-    MIN_PARALLAX = fsSettings["keyframe_parallax"];
+    SOLVER_TIME = fsSettings["max_solver_time"]; //单次优化最大求解时间
+    NUM_ITERATIONS = fsSettings["max_num_iterations"]; //单次优化最大迭代次数
+    MIN_PARALLAX = fsSettings["keyframe_parallax"];//根据视差确定关键帧
     MIN_PARALLAX = MIN_PARALLAX / FOCAL_LENGTH;
 
     std::string OUTPUT_PATH;
@@ -62,6 +62,7 @@ void readParameters(ros::NodeHandle &n)
     std::cout << "result path " << VINS_RESULT_PATH << std::endl;
 
     // create folder if not exists
+    //很贴心啊！
     FileSystemHelper::createDirectoryIfNotExists(OUTPUT_PATH.c_str());
 
     std::ofstream fout(VINS_RESULT_PATH, std::ios::out);
@@ -77,11 +78,14 @@ void readParameters(ros::NodeHandle &n)
     ROS_INFO("ROW: %f COL: %f ", ROW, COL);
 
     ESTIMATE_EXTRINSIC = fsSettings["estimate_extrinsic"];
+    //如果外部`estimate_extrinsic`设置为2，为1
     if (ESTIMATE_EXTRINSIC == 2)
     {
         ROS_WARN("have no prior about extrinsic param, calibrate extrinsic param");
+        // 将单位矩阵添加到 RIC 向量中，将零向量添加到 TIC 向量中
         RIC.push_back(Eigen::Matrix3d::Identity());
         TIC.push_back(Eigen::Vector3d::Zero());
+        // 设置存储外参校准结果的路径
         EX_CALIB_RESULT_PATH = OUTPUT_PATH + "/extrinsic_parameter.csv";
 
     }
@@ -93,7 +97,7 @@ void readParameters(ros::NodeHandle &n)
             EX_CALIB_RESULT_PATH = OUTPUT_PATH + "/extrinsic_parameter.csv";
         }
         if (ESTIMATE_EXTRINSIC == 0)
-            ROS_WARN(" fix extrinsic param ");
+            ROS_WARN(" fix extrinsic param ");//“固定外参！”
 
         cv::Mat cv_R, cv_T;
         fsSettings["extrinsicRotation"] >> cv_R;
@@ -111,8 +115,8 @@ void readParameters(ros::NodeHandle &n)
         
     } 
 
-    INIT_DEPTH = 5.0;
-    BIAS_ACC_THRESHOLD = 0.1;
+    INIT_DEPTH = 5.0;//特征点深度的默认值
+    BIAS_ACC_THRESHOLD = 0.1;//没用到
     BIAS_GYR_THRESHOLD = 0.1;
 
     TD = fsSettings["td"];

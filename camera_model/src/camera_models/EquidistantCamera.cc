@@ -418,6 +418,7 @@ EquidistantCamera::liftSphere(const Eigen::Vector2d& p, Eigen::Vector3d& P) cons
     liftProjective(p, P);
 }
 
+
 /** 
  * \brief Lifts a point from the image plane to its projective ray
  *

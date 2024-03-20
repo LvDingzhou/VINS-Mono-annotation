@@ -47,7 +47,7 @@ void img_callback(const sensor_msgs::ImageConstPtr &img_msg)
         return;
     }
     last_image_time = img_msg->header.stamp.toSec();
-    // frequency control
+    // frequency control 频率控制
     if (round(1.0 * pub_count / (img_msg->header.stamp.toSec() - first_image_time)) <= FREQ)
     {
         PUB_THIS_FRAME = true;
@@ -83,6 +83,7 @@ void img_callback(const sensor_msgs::ImageConstPtr &img_msg)
     {
         ROS_DEBUG("processing camera %d", i);
         if (i != 1 || !STEREO_TRACK)
+            //这是一个很关键的函数
             trackerData[i].readImage(ptr->image.rowRange(ROW * i, ROW * (i + 1)), img_msg->header.stamp.toSec());
         else
         {
@@ -132,6 +133,7 @@ void img_callback(const sensor_msgs::ImageConstPtr &img_msg)
             auto &pts_velocity = trackerData[i].pts_velocity;
             for (unsigned int j = 0; j < ids.size(); j++)
             {
+                //只发布追踪大于1的，因为等于1没法构成重投影约束，也没法三角化
                 if (trackerData[i].track_cnt[j] > 1)
                 {
                     int p_id = ids[j];
@@ -206,12 +208,12 @@ void img_callback(const sensor_msgs::ImageConstPtr &img_msg)
 int main(int argc, char **argv)
 {
     ros::init(argc, argv, "feature_tracker");
-    ros::NodeHandle n("~");
+    ros::NodeHandle n("~");//私有命名空间
     ros::console::set_logger_level(ROSCONSOLE_DEFAULT_NAME, ros::console::levels::Info);
     readParameters(n);
 
     for (int i = 0; i < NUM_OF_CAM; i++)
-        trackerData[i].readIntrinsicParameter(CAM_NAMES[i]);
+        trackerData[i].readIntrinsicParameter(CAM_NAMES[i]);//读取内参
 
     if(FISHEYE)
     {
@@ -228,7 +230,7 @@ int main(int argc, char **argv)
         }
     }
 
-    ros::Subscriber sub_img = n.subscribe(IMAGE_TOPIC, 100, img_callback);
+    ros::Subscriber sub_img = n.subscribe(IMAGE_TOPIC, 100, img_callback);//这个回调函数是关键
 
     pub_img = n.advertise<sensor_msgs::PointCloud>("feature", 1000);
     pub_match = n.advertise<sensor_msgs::Image>("feature_img",1000);

@@ -1,5 +1,5 @@
 FROM ros:kinetic-perception
-
+  
 ENV CERES_VERSION="1.12.0"
 ENV CATKIN_WS=/root/catkin_ws
 
@@ -19,7 +19,7 @@ RUN   if [ "x$(nproc)" = "x1" ] ; then export USE_PROC=1 ; \
       ros-${ROS_DISTRO}-tf && \
       rm -rf /var/lib/apt/lists/* && \
       # Build and install Ceres
-      git clone https://ceres-solver.googlesource.com/ceres-solver && \
+      git clone https://github.com/ceres-solver/ceres-solver.git && \
       cd ceres-solver && \
       git checkout tags/${CERES_VERSION} && \
       mkdir build && cd build && \
@@ -29,10 +29,10 @@ RUN   if [ "x$(nproc)" = "x1" ] ; then export USE_PROC=1 ; \
       mkdir -p $CATKIN_WS/src/VINS-Mono/
 
 # Copy VINS-Mono
-COPY ./ $CATKIN_WS/src/VINS-Mono/
+COPY ../ $CATKIN_WS/src/VINS-Mono/
+
 # use the following line if you only have this dockerfile
 # RUN git clone https://github.com/HKUST-Aerial-Robotics/VINS-Mono.git
-
 # Build VINS-Mono
 WORKDIR $CATKIN_WS
 ENV TERM xterm
@@ -44,3 +44,4 @@ RUN catkin config \
     catkin build && \
     sed -i '/exec "$@"/i \
             source "/root/catkin_ws/devel/setup.bash"' /ros_entrypoint.sh
+

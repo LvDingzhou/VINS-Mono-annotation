@@ -19,6 +19,7 @@ class IntegrationBase
 
     {
         noise = Eigen::Matrix<double, 18, 18>::Zero();
+        //ACC_N,GYR_N_ACC_W,GYR_W是标定出来的，
         noise.block<3, 3>(0, 0) =  (ACC_N * ACC_N) * Eigen::Matrix3d::Identity();
         noise.block<3, 3>(3, 3) =  (GYR_N * GYR_N) * Eigen::Matrix3d::Identity();
         noise.block<3, 3>(6, 6) =  (ACC_N * ACC_N) * Eigen::Matrix3d::Identity();
@@ -29,9 +30,11 @@ class IntegrationBase
 
     void push_back(double dt, const Eigen::Vector3d &acc, const Eigen::Vector3d &gyr)
     {
+        //这些变量存到buffer中为后续repropagate使用
         dt_buf.push_back(dt);
         acc_buf.push_back(acc);
         gyr_buf.push_back(gyr);
+        //由第i帧imu数据递推第i+1帧imu数据
         propagate(dt, acc, gyr);
     }
 
@@ -60,6 +63,7 @@ class IntegrationBase
                             Eigen::Vector3d &result_linearized_ba, Eigen::Vector3d &result_linearized_bg, bool update_jacobian)
     {
         //ROS_INFO("midpoint integration");
+        //更新状态变量 两帧之间PVQ增量的中值法离散形式，这是崔中公式8，意思是这里的状态变量是在body坐标系下的状态变量
         Vector3d un_acc_0 = delta_q * (_acc_0 - linearized_ba);
         Vector3d un_gyr = 0.5 * (_gyr_0 + _gyr_1) - linearized_bg;
         result_delta_q = delta_q * Quaterniond(1, un_gyr(0) * _dt / 2, un_gyr(1) * _dt / 2, un_gyr(2) * _dt / 2);
@@ -70,6 +74,8 @@ class IntegrationBase
         result_linearized_ba = linearized_ba;
         result_linearized_bg = linearized_bg;         
 
+        //崔公式15-18，更新了Jacaobian和协方差，对照卡尔曼滤波公式，可以理解协方差矩阵的作用。
+        //而Jacobian矩阵是用作优化中求解非线性最小二乘时使用的
         if(update_jacobian)
         {
             Vector3d w_x = 0.5 * (_gyr_0 + _gyr_1) - linearized_bg;
@@ -130,6 +136,7 @@ class IntegrationBase
     void propagate(double _dt, const Eigen::Vector3d &_acc_1, const Eigen::Vector3d &_gyr_1)
     {
         dt = _dt;
+        //新的数据
         acc_1 = _acc_1;
         gyr_1 = _gyr_1;
         Vector3d result_delta_p;

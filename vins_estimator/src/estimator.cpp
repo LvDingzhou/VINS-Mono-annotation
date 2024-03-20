@@ -90,6 +90,9 @@ void Estimator::processIMU(double dt, const Vector3d &linear_acceleration, const
         gyr_0 = angular_velocity;
     }
 
+    //滑窗中只维护了11个预积分量，frame_count表示现在处理到第几帧，一般处理到11帧就保持不变了
+    //由于预积分是帧间约束，所以第一个预积分量实际上是用不到的
+    //是为了进来的第一帧数据能和后面的数据积分减少误差
     if (!pre_integrations[frame_count])
     {
         pre_integrations[frame_count] = new IntegrationBase{acc_0, gyr_0, Bas[frame_count], Bgs[frame_count]};
@@ -98,12 +101,14 @@ void Estimator::processIMU(double dt, const Vector3d &linear_acceleration, const
     {
         pre_integrations[frame_count]->push_back(dt, linear_acceleration, angular_velocity);
         //if(solver_flag != NON_LINEAR)
+            //初始化用的，滑窗优化中用不到了
             tmp_pre_integration->push_back(dt, linear_acceleration, angular_velocity);
 
         dt_buf[frame_count].push_back(dt);
         linear_acceleration_buf[frame_count].push_back(linear_acceleration);
         angular_velocity_buf[frame_count].push_back(angular_velocity);
-
+        //又是中值积分，更新滑窗中状态量，本质是给非线性优化提供可信的初始值
+        //崔(2)
         int j = frame_count;         
         Vector3d un_acc_0 = Rs[j] * (acc_0 - Bas[j]) - g;
         Vector3d un_gyr = 0.5 * (gyr_0 + angular_velocity) - Bgs[j];
@@ -121,9 +126,12 @@ void Estimator::processImage(const map<int, vector<pair<int, Eigen::Matrix<doubl
 {
     ROS_DEBUG("new image coming ------------------------------------------");
     ROS_DEBUG("Adding feature points %lu", image.size());
-    if (f_manager.addFeatureCheckParallax(frame_count, image, td))
+    if (f_manager.addFeatureCheckParallax(frame_count, image, td))//查看是否有足够的视差
+    //如果上一帧是关键帧，则滑窗中最老的帧要被移出滑窗
         marginalization_flag = MARGIN_OLD;
     else
+    //否则移出上一帧
+    //举例：滑窗中11帧，如果不是移出第一帧，那么就是移出第11帧
         marginalization_flag = MARGIN_SECOND_NEW;
 
     ROS_DEBUG("this frame is--------------------%s", marginalization_flag ? "reject" : "accept");
@@ -133,10 +141,16 @@ void Estimator::processImage(const map<int, vector<pair<int, Eigen::Matrix<doubl
     Headers[frame_count] = header;
 
     ImageFrame imageframe(image, header.stamp.toSec());
+    //初始化用的imu预积分值
+    //一直在保留两帧之间（不管是否是kf的）imu预积分——当然这个量是在初始化中使用的
     imageframe.pre_integration = tmp_pre_integration;
+    //make_pair中的索引是时间戳
     all_image_frame.insert(make_pair(header.stamp.toSec(), imageframe));
+    //帧间预积分量复位
     tmp_pre_integration = new IntegrationBase{acc_0, gyr_0, Bas[frame_count], Bgs[frame_count]};
 
+    //没有外参初始化
+    //*step2:外参初始化*
     if(ESTIMATE_EXTRINSIC == 2)
     {
         ROS_INFO("calibrating extrinsic param, rotation movement is needed");
@@ -168,7 +182,7 @@ void Estimator::processImage(const map<int, vector<pair<int, Eigen::Matrix<doubl
             if(result)
             {
                 solver_flag = NON_LINEAR;
-                solveOdometry();
+                solveOdometry();//2.滑窗优化
                 slideWindow();
                 f_manager.removeFailures();
                 ROS_INFO("Initialization finish!");
@@ -477,9 +491,9 @@ void Estimator::solveOdometry()
     if (solver_flag == NON_LINEAR)
     {
         TicToc t_tri;
-        f_manager.triangulate(Ps, tic, ric);
+        f_manager.triangulate(Ps, tic, ric);//三角化
         ROS_DEBUG("triangulation costs %f", t_tri.toc());
-        optimization();
+        optimization();//滑窗优化
     }
 }
 
