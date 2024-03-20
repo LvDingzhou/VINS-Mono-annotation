@@ -1,5 +1,6 @@
 #include "initial_ex_rotation.h"
 
+//test 3
 InitialEXRotation::InitialEXRotation(){
     frame_count = 0;
     Rc.push_back(Matrix3d::Identity());
