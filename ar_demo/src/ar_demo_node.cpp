@@ -62,7 +62,7 @@ std_msgs::ColorRGBA line_color_b;
 
 void axis_generate(visualization_msgs::Marker &line_list, Vector3d &origin, int id)
 {
-
+//test from laptop
     line_list.id = id;
     line_list.header.frame_id = "world";
     line_list.header.stamp = ros::Time::now();
