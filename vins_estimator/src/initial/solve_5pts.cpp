@@ -208,7 +208,7 @@ bool MotionEstimator::solveRelativeRT(const vector<pair<Vector3d, Vector3d>> &co
         //cout << "inlier_cnt " << inlier_cnt << endl;
 
         Eigen::Matrix3d R;
-        Eigen::Vector3d T;
+        Eigen::Vector3d T;//cv转为eigen
         for (int i = 0; i < 3; i++)
         {   
             T(i) = trans.at<double>(i, 0);
@@ -216,6 +216,7 @@ bool MotionEstimator::solveRelativeRT(const vector<pair<Vector3d, Vector3d>> &co
                 R(i, j) = rot.at<double>(i, j);
         }
 
+        //opencv得到的是T21,这里转换为T12
         Rotation = R.transpose();
         Translation = -R.transpose() * T;
         if(inlier_cnt > 12)

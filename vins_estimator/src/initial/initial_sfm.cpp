@@ -122,6 +122,7 @@ bool GlobalSFM::construct(int frame_num, Quaterniond* q, Vector3d* T, int l,
 	//cout << "set 0 and " << l << " as known " << endl;
 	// have relative_r relative_t
 	// intial two view
+	//枢纽帧设置为单位阵
 	q[l].w() = 1;
 	q[l].x() = 0;
 	q[l].y() = 0;
@@ -132,6 +133,7 @@ bool GlobalSFM::construct(int frame_num, Quaterniond* q, Vector3d* T, int l,
 	//cout << "init q_l " << q[l].w() << " " << q[l].vec().transpose() << endl;
 	//cout << "init t_l " << T[l].transpose() << endl;
 
+	//把Twc转成Tcw
 	//rotate to cam frame
 	Matrix3d c_Rotation[frame_num];
 	Vector3d c_Translation[frame_num];

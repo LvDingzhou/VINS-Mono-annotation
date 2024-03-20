@@ -174,12 +174,12 @@ void Estimator::processImage(const map<int, vector<pair<int, Eigen::Matrix<doubl
         if (frame_count == WINDOW_SIZE)
         {
             bool result = false;
-            if( ESTIMATE_EXTRINSIC != 2 && (header.stamp.toSec() - initial_timestamp) > 0.1)
+            if( ESTIMATE_EXTRINSIC != 2 && (header.stamp.toSec() - initial_timestamp) > 0.1)//等到外参比较好的时候
             {
-               result = initialStructure();
+               result = initialStructure();//06-06
                initial_timestamp = header.stamp.toSec();
             }
-            if(result)
+            if(result)//完成初始化之后
             {
                 solver_flag = NON_LINEAR;
                 solveOdometry();//2.滑窗优化
@@ -232,7 +232,7 @@ void Estimator::processImage(const map<int, vector<pair<int, Eigen::Matrix<doubl
 bool Estimator::initialStructure()
 {
     TicToc t_sfm;
-    //check imu observibility
+    //check imu observibility 检查imu能观性
     {
         map<double, ImageFrame>::iterator frame_it;
         Vector3d sum_g;
@@ -240,7 +240,7 @@ bool Estimator::initialStructure()
         {
             double dt = frame_it->second.pre_integration->sum_dt;
             Vector3d tmp_g = frame_it->second.pre_integration->delta_v / dt;
-            sum_g += tmp_g;
+            sum_g += tmp_g;//累加重力方向
         }
         Vector3d aver_g;
         aver_g = sum_g * 1.0 / ((int)all_image_frame.size() - 1);
@@ -256,7 +256,7 @@ bool Estimator::initialStructure()
         //ROS_WARN("IMU variation %f!", var);
         if(var < 0.25)
         {
-            ROS_INFO("IMU excitation not enouth!");
+            ROS_INFO("IMU excitation not enouth!");//通过判断imu的方差来判断这段时间imu的激励是否足够
             //return false;
         }
     }
@@ -267,8 +267,8 @@ bool Estimator::initialStructure()
     vector<SFMFeature> sfm_f;
     for (auto &it_per_id : f_manager.feature)
     {
-        int imu_j = it_per_id.start_frame - 1;
-        SFMFeature tmp_feature;
+        int imu_j = it_per_id.start_frame - 1;//与imu无关
+        SFMFeature tmp_feature;//用来后续做sfm
         tmp_feature.state = false;
         tmp_feature.id = it_per_id.feature_id;
         for (auto &it_per_frame : it_per_id.feature_per_frame)
@@ -277,7 +277,7 @@ bool Estimator::initialStructure()
             Vector3d pts_j = it_per_frame.point;
             tmp_feature.observation.push_back(make_pair(imu_j, Eigen::Vector2d{pts_j.x(), pts_j.y()}));
         }
-        sfm_f.push_back(tmp_feature);
+        sfm_f.push_back(tmp_feature);//拿到这些特征点是为了做sfm的
     } 
     Matrix3d relative_R;
     Vector3d relative_T;
@@ -290,11 +290,11 @@ bool Estimator::initialStructure()
     GlobalSFM sfm;
     if(!sfm.construct(frame_count + 1, Q, T, l,
               relative_R, relative_T,
-              sfm_f, sfm_tracked_points))
+              sfm_f, sfm_tracked_points))//求解初始化的每一帧的位姿和3d点
     {
         ROS_DEBUG("global SFM failed!");
         marginalization_flag = MARGIN_OLD;
-        return false;
+        return false;//初始化失败！重新初始化
     }
 
     //solve pnp for all frame
@@ -453,13 +453,20 @@ bool Estimator::visualInitialAlign()
     return true;
 }
 
+/// @brief 找到枢纽帧l，并且求解枢纽帧和newest frame的对极约束
+/// @param relative_R 
+/// @param relative_T 
+/// @param l 
+/// @return 
 bool Estimator::relativePose(Matrix3d &relative_R, Vector3d &relative_T, int &l)
 {
     // find previous frame which contians enough correspondance and parallex with newest frame
+    //寻找枢纽帧"l"，这一帧满足上述条件👆
     for (int i = 0; i < WINDOW_SIZE; i++)
     {
         vector<pair<Vector3d, Vector3d>> corres;
         corres = f_manager.getCorresponding(i, WINDOW_SIZE);
+        //要求共视点有20个点
         if (corres.size() > 20)
         {
             double sum_parallax = 0;
