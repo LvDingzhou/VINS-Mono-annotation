@@ -17,7 +17,7 @@ struct SFMFeature
 {
     bool state;
     int id;
-    vector<pair<int,Vector2d>> observation;
+    vector<pair<int,Vector2d>> observation;//这里的int放被第几帧看到的id
     double position[3];
     double depth;
 };
@@ -33,11 +33,11 @@ struct ReprojectionError3D
 	{
 		T p[3];
 		ceres::QuaternionRotatePoint(camera_R, point, p);
-		p[0] += camera_T[0]; p[1] += camera_T[1]; p[2] += camera_T[2];
+		p[0] += camera_T[0]; p[1] += camera_T[1]; p[2] += camera_T[2];//重投影
 		T xp = p[0] / p[2];
-    	T yp = p[1] / p[2];
+    	T yp = p[1] / p[2];//归一化
     	residuals[0] = xp - T(observed_u);
-    	residuals[1] = yp - T(observed_v);
+    	residuals[1] = yp - T(observed_v);//重投影的误差
     	return true;
 	}
 
@@ -45,7 +45,7 @@ struct ReprojectionError3D
 	                                   const double observed_y) 
 	{
 	  return (new ceres::AutoDiffCostFunction<
-	          ReprojectionError3D, 2, 4, 3, 3>(
+	          ReprojectionError3D, 2, 4, 3, 3>(//残差维度，旋转维度，T维度，3d点维度
 	          	new ReprojectionError3D(observed_x,observed_y)));
 	}
 
