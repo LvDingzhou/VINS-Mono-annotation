@@ -132,6 +132,17 @@ void GlobalSFM::triangulateTwoFrames(int frame0, Eigen::Matrix<double, 3, 4> &Po
 //  c_translation cam_R_w
 // relative_q[i][j]  j_q_i
 // relative_t[i][j]  j_t_ji  (j < i)
+
+/// @brief 根据已有的枢纽帧和最后一帧位姿变换，得到各帧位姿和3d点坐标，最后通过ceres进行优化
+/// @param frame_num 滑窗内总KF数量
+/// @param q 恢复出来的滑窗中各个姿态
+/// @param T 恢复出来的滑窗中各个平移
+/// @param l 枢纽真的idx
+/// @param relative_R 枢纽帧和最后一帧的旋转
+/// @param relative_T 枢纽帧和最后一帧的平移
+/// @param sfm_f 用来做sfm的特征点集合
+/// @param sfm_tracked_points 恢复出来的地图点
+/// @return 
 bool GlobalSFM::construct(int frame_num, Quaterniond* q, Vector3d* T, int l,
 			  const Matrix3d relative_R, const Vector3d relative_T,
 			  vector<SFMFeature> &sfm_f, map<int, Vector3d> &sfm_tracked_points)
