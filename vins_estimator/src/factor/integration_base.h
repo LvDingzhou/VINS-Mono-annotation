@@ -75,7 +75,7 @@ class IntegrationBase
         result_linearized_bg = linearized_bg;         
 
         //崔公式15-18，更新了Jacaobian和协方差，对照卡尔曼滤波公式，可以理解协方差矩阵的作用。
-        //而Jacobian矩阵是用作优化中求解非线性最小二乘时使用的
+        //而Jacobian矩阵是用作优化中求解非线性最小二乘时使用，以及避免重新进行预积分，所以让零偏用jacobi来更新
         if(update_jacobian)
         {
             Vector3d w_x = 0.5 * (_gyr_0 + _gyr_1) - linearized_bg;

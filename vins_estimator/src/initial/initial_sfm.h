@@ -32,8 +32,8 @@ struct ReprojectionError3D
 	bool operator()(const T* const camera_R, const T* const camera_T, const T* point, T* residuals) const
 	{
 		T p[3];
-		ceres::QuaternionRotatePoint(camera_R, point, p);
-		p[0] += camera_T[0]; p[1] += camera_T[1]; p[2] += camera_T[2];//重投影
+		ceres::QuaternionRotatePoint(camera_R, point, p);//将3d点旋转，存到p中
+		p[0] += camera_T[0]; p[1] += camera_T[1]; p[2] += camera_T[2];//然后将3d点平移到相机坐标系下
 		T xp = p[0] / p[2];
     	T yp = p[1] / p[2];//归一化
     	residuals[0] = xp - T(observed_u);

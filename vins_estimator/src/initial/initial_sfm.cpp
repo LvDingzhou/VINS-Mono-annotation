@@ -277,6 +277,12 @@ bool GlobalSFM::construct(int frame_num, Quaterniond* q, Vector3d* T, int l,
 		c_rotation[i][1] = c_Quat[i].x();
 		c_rotation[i][2] = c_Quat[i].y();
 		c_rotation[i][3] = c_Quat[i].z();
+		//problem对象也可以调用AddParameterBlock()显式添加输入参数块，这会导致额外的正确性检查；
+		//但是，如果参数块不存在，AddResidualBlock()会隐式添加它们，因此不需要显式调用AddParameterBlock()。
+		//The user has the option of explicitly adding the parameter blocks using AddParameterBlock. This causes additional correctness checking; 
+		//however,AddResidualBlock implicitly adds the parameter blocks if they are not present, so calling AddParameterBlock explicitly is not required.
+		//ceres官网：http://ceres-solver.org/features.html
+		//ceres详细介绍：https://blog.csdn.net/qq_38410730/article/details/131439027
 		problem.AddParameterBlock(c_rotation[i], 4, local_parameterization);//每次加入四元数的参数块儿的时候要声明一下
 		problem.AddParameterBlock(c_translation[i], 3);
 		
@@ -301,8 +307,8 @@ bool GlobalSFM::construct(int frame_num, Quaterniond* q, Vector3d* T, int l,
 												sfm_f[i].observation[j].second.x(),
 												sfm_f[i].observation[j].second.y());
 
-    		problem.AddResidualBlock(cost_function, NULL, c_rotation[l], c_translation[l], 
-    								sfm_f[i].position);	 
+    		problem.AddResidualBlock(cost_function, NULL, c_rotation[l], c_translation[l],
+    								sfm_f[i].position);	 //这里面`c_rotation[l], c_translation[l],sfm_f[i].position`既是参数，也是待优化的变量
 		}
 
 	}
