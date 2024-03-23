@@ -43,18 +43,21 @@ MatrixXd TangentBasis(Vector3d &g0)
     Vector3d a = g0.normalized();
     Vector3d tmp(0, 0, 1);
     if(a == tmp)
-        tmp << 1, 0, 0;
-    b = (tmp - a * (a.transpose() * tmp)).normalized();
-    c = a.cross(b);
+        tmp << 1, 0, 0;//保证a和tmp不平行
+    //a.transpose()*tmp计算得到了tmp在a向量上的投影大小，是一个标量(向量点乘是标量)
+    //a*(a.transpose()*tmp)这里得到一个沿着a的方向但大小是上述标量的向量
+    //tmp-a*(a.transpose()*tmp)得到垂直于a的向量b
+    b = (tmp - a * (a.transpose() * tmp)).normalized();//得到垂直于a的单位矢量b
+    c = a.cross(b);//axb=c
     MatrixXd bc(3, 2);
     bc.block<3, 1>(0, 0) = b;
     bc.block<3, 1>(0, 1) = c;
-    return bc;
+    return bc;//最后得到了与重力两两垂直的向量b1和b2（笔记15页）
 }
 
 void RefineGravity(map<double, ImageFrame> &all_image_frame, Vector3d &g, VectorXd &x)
 {
-    Vector3d g0 = g.normalized() * G.norm();
+    Vector3d g0 = g.normalized() * G.norm();//上一帧算出来的重力
     Vector3d lx, ly;
     //VectorXd x;
     int all_frame_count = all_image_frame.size();
@@ -69,7 +72,7 @@ void RefineGravity(map<double, ImageFrame> &all_image_frame, Vector3d &g, Vector
     map<double, ImageFrame>::iterator frame_j;
     for(int k = 0; k < 4; k++)
     {
-        MatrixXd lxly(3, 2);
+        MatrixXd lxly(3, 2);//(lx ly are b1 b2 )
         lxly = TangentBasis(g0);
         int i = 0;
         for (frame_i = all_image_frame.begin(); next(frame_i) != all_image_frame.end(); frame_i++, i++)
@@ -92,7 +95,7 @@ void RefineGravity(map<double, ImageFrame> &all_image_frame, Vector3d &g, Vector
             tmp_A.block<3, 3>(3, 0) = -Matrix3d::Identity();
             tmp_A.block<3, 3>(3, 3) = frame_i->second.R.transpose() * frame_j->second.R;
             tmp_A.block<3, 2>(3, 6) = frame_i->second.R.transpose() * dt * Matrix3d::Identity() * lxly;
-            tmp_b.block<3, 1>(3, 0) = frame_j->second.pre_integration->delta_v - frame_i->second.R.transpose() * dt * Matrix3d::Identity() * g0;
+            tmp_b.block<3, 1>(3, 0) = frame_j->second.pre_integration->delta_v - frame_i->second.R.transpose() * dt * Matrix3d::Identity() * g0;//笔记15页新的方程
 
 
             Matrix<double, 6, 6> cov_inv = Matrix<double, 6, 6>::Zero();
@@ -117,7 +120,7 @@ void RefineGravity(map<double, ImageFrame> &all_image_frame, Vector3d &g, Vector
             b = b * 1000.0;
             x = A.ldlt().solve(b);//构建了一个很大的矩阵
             VectorXd dg = x.segment<2>(n_state - 3);
-            g0 = (g0 + lxly * dg).normalized() * G.norm();
+            g0 = (g0 + lxly * dg).normalized() * G.norm();//对g0的更新；normalized是归一化；G是取模
             //double s = x(n_state - 1);
     }   
     g = g0;
@@ -178,6 +181,7 @@ bool LinearAlignment(map<double, ImageFrame> &all_image_frame, Vector3d &g, Vect
         A.block<6, 4>(i * 3, n_state - 4) += r_A.topRightCorner<6, 4>();
         A.block<4, 6>(n_state - 4, i * 3) += r_A.bottomLeftCorner<4, 6>();
     }
+    //增强数值稳定性
     A = A * 1000.0;
     b = b * 1000.0;
     x = A.ldlt().solve(b);
@@ -200,6 +204,12 @@ bool LinearAlignment(map<double, ImageFrame> &all_image_frame, Vector3d &g, Vect
         return true;
 }
 
+/// @brief 这是视觉与惯性对齐的公式部分
+/// @param all_image_frame 
+/// @param Bgs 
+/// @param g 
+/// @param x 
+/// @return 
 bool VisualIMUAlignment(map<double, ImageFrame> &all_image_frame, Vector3d* Bgs, Vector3d &g, VectorXd &x)
 {
     solveGyroscopeBias(all_image_frame, Bgs);

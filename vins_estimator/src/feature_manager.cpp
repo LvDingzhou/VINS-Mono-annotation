@@ -25,6 +25,8 @@ void FeatureManager::clearState()
     feature.clear();
 }
 
+/// @brief 得到有效地图点的数目
+/// @return 
 int FeatureManager::getFeatureCount()
 {
     int cnt = 0;
@@ -192,7 +194,7 @@ void FeatureManager::clearDepth(const VectorXd &x)
         it_per_id.used_num = it_per_id.feature_per_frame.size();
         if (!(it_per_id.used_num >= 2 && it_per_id.start_frame < WINDOW_SIZE - 2))
             continue;
-        it_per_id.estimated_depth = 1.0 / x(++feature_index);
+        it_per_id.estimated_depth = 1.0 / x(++feature_index);//`feature_index`先自增，然后用来索引`x`向量
     }
 }
 
@@ -222,7 +224,7 @@ void FeatureManager::triangulate(Vector3d Ps[], Vector3d tic[], Matrix3d ric[])
         if (!(it_per_id.used_num >= 2 && it_per_id.start_frame < WINDOW_SIZE - 2))
             continue;
 
-        if (it_per_id.estimated_depth > 0)
+        if (it_per_id.estimated_depth > 0)//代表已经三角化过了
             continue;
         int imu_i = it_per_id.start_frame, imu_j = imu_i - 1;
 
@@ -231,6 +233,7 @@ void FeatureManager::triangulate(Vector3d Ps[], Vector3d tic[], Matrix3d ric[])
         int svd_idx = 0;
 
         Eigen::Matrix<double, 3, 4> P0;
+        //Twi->Twc,第一个观察到这个特征点的KF的位姿,以下是一个T*T的运算
         Eigen::Vector3d t0 = Ps[imu_i] + Rs[imu_i] * tic[0];
         Eigen::Matrix3d R0 = Rs[imu_i] * ric[0];
         P0.leftCols<3>() = Eigen::Matrix3d::Identity();
@@ -239,15 +242,17 @@ void FeatureManager::triangulate(Vector3d Ps[], Vector3d tic[], Matrix3d ric[])
         for (auto &it_per_frame : it_per_id.feature_per_frame)
         {
             imu_j++;
-
+            //得到该KF的相机坐标系位姿
             Eigen::Vector3d t1 = Ps[imu_j] + Rs[imu_j] * tic[0];
             Eigen::Matrix3d R1 = Rs[imu_j] * ric[0];
+            //T_w_cj -> T_c0_cj，把枢纽帧转化到第0帧(这里w是枢纽帧坐标系，c0是第0帧)
             Eigen::Vector3d t = R0.transpose() * (t1 - t0);
             Eigen::Matrix3d R = R0.transpose() * R1;
             Eigen::Matrix<double, 3, 4> P;
             P.leftCols<3>() = R.transpose();
             P.rightCols<1>() = -R.transpose() * t;
             Eigen::Vector3d f = it_per_frame.point.normalized();
+            //构建超定方程的其中两个方程
             svd_A.row(svd_idx++) = f[0] * P.row(2) - f[2] * P.row(0);
             svd_A.row(svd_idx++) = f[1] * P.row(2) - f[2] * P.row(1);
 
@@ -256,16 +261,17 @@ void FeatureManager::triangulate(Vector3d Ps[], Vector3d tic[], Matrix3d ric[])
         }
         ROS_ASSERT(svd_idx == svd_A.rows());
         Eigen::Vector4d svd_V = Eigen::JacobiSVD<Eigen::MatrixXd>(svd_A, Eigen::ComputeThinV).matrixV().rightCols<1>();
+        //求解其次坐标下的深度
         double svd_method = svd_V[2] / svd_V[3];
         //it_per_id->estimated_depth = -b / A;
         //it_per_id->estimated_depth = svd_V[2] / svd_V[3];
-
+        //得到的深度值实际上就是第一个观察到这个特征点的相机坐标系下的深度值
         it_per_id.estimated_depth = svd_method;
         //it_per_id->estimated_depth = INIT_DEPTH;
 
         if (it_per_id.estimated_depth < 0.1)
         {
-            it_per_id.estimated_depth = INIT_DEPTH;
+            it_per_id.estimated_depth = INIT_DEPTH;//特征点距离太近就设置成默认值
         }
 
     }

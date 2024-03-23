@@ -377,6 +377,8 @@ bool Estimator::initialStructure()
 
 }
 
+/// @brief 这是视觉和imu对齐的工程部分
+/// @return 
 bool Estimator::visualInitialAlign()
 {
     TicToc t_g;
@@ -390,19 +392,21 @@ bool Estimator::visualInitialAlign()
     }
 
     // change state
+    //all_image_frame是关键帧+普通帧的集合
     for (int i = 0; i <= frame_count; i++)
     {
         Matrix3d Ri = all_image_frame[Headers[i].stamp.toSec()].R;
-        Vector3d Pi = all_image_frame[Headers[i].stamp.toSec()].T;
+        Vector3d Pi = all_image_frame[Headers[i].stamp.toSec()].T;//拿到关键帧的R和T
         Ps[i] = Pi;
         Rs[i] = Ri;
         all_image_frame[Headers[i].stamp.toSec()].is_key_frame = true;
     }
 
+    //f_manger(特征点管理器)
     VectorXd dep = f_manager.getDepthVector();
     for (int i = 0; i < dep.size(); i++)
-        dep[i] = -1;
-    f_manager.clearDepth(dep);
+        dep[i] = -1;//向量中的每个元素都放-1
+    f_manager.clearDepth(dep);//特征管理器把所有特征点的逆深度设置为-1
 
     //triangulat on cam pose , no tic
     Vector3d TIC_TMP[NUM_OF_CAM];
@@ -410,15 +414,24 @@ bool Estimator::visualInitialAlign()
         TIC_TMP[i].setZero();
     ric[0] = RIC[0];
     f_manager.setRic(ric);
+    //多约束三角化所有的特征点，注意，仍然是尺度模糊的！
     f_manager.triangulate(Ps, &(TIC_TMP[0]), &(RIC[0]));
 
-    double s = (x.tail<1>())(0);
+    double s = (x.tail<1>())(0);//提取`x`向量的最后一个元素
     for (int i = 0; i <= WINDOW_SIZE; i++)
     {
+        //把滑窗中的预积分重新计算
         pre_integrations[i]->repropagate(Vector3d::Zero(), Bgs[i]);
     }
+
     for (int i = frame_count; i >= 0; i--)
-        Ps[i] = s * Ps[i] - Rs[i] * TIC[0] - (s * Ps[0] - Rs[0] * TIC[0]);
+        //twi - tw0 = t0i,就是imu第0帧到滑窗第0帧的平移，这里的w是枢纽帧
+        //=右边的Ps本来是在相机坐标系下的，然后要转到w下，w是枢纽帧
+
+        //s * Ps[i] - Rs[i] * TIC[0]是  s*P_l_ci - R_l_bk*P_b_c = s*P_l_bk
+        //s * Ps[0] - Rs[0] * TIC[0]是k=0时刻的s*P_l_bk
+        //所以这里得到的Ps[i]是以[0,0,0]为原点的s*P_l_bk
+        Ps[i] = s * Ps[i] - Rs[i] * TIC[0] - (s * Ps[0] - Rs[0] * TIC[0]);//这里的意思是Ps还是在枢纽帧下的，以枢纽帧为参考系的，已经恢复尺度了
     int kv = -1;
     map<double, ImageFrame>::iterator frame_i;
     for (frame_i = all_image_frame.begin(); frame_i != all_image_frame.end(); frame_i++)
@@ -426,9 +439,11 @@ bool Estimator::visualInitialAlign()
         if(frame_i->second.is_key_frame)
         {
             kv++;
+            //当时求得的速度是imu系，现在转到world系，这里的world系是枢纽帧
             Vs[kv] = frame_i->second.R * x.segment<3>(kv * 3);
         }
     }
+    //把尺度模糊的3d点恢复到真实尺度下
     for (auto &it_per_id : f_manager.feature)
     {
         it_per_id.used_num = it_per_id.feature_per_frame.size();
@@ -436,10 +451,11 @@ bool Estimator::visualInitialAlign()
             continue;
         it_per_id.estimated_depth *= s;
     }
-
-    Matrix3d R0 = Utility::g2R(g);
-    double yaw = Utility::R2ypr(R0 * Rs[0]).x();
-    R0 = Utility::ypr2R(Eigen::Vector3d{-yaw, 0, 0}) * R0;
+    //所有PVQ对齐到第0帧，同时对齐重力方向
+    //g是枢纽帧的重力方向
+    Matrix3d R0 = Utility::g2R(g);//得到R_w_j（还把yaw角清零了）(R_w_j代表枢纽帧转到真正的世界系下)
+    double yaw = Utility::R2ypr(R0 * Rs[0]).x();//Rs[0]实际上是R_j_0（第0帧到枢纽帧）
+    R0 = Utility::ypr2R(Eigen::Vector3d{-yaw, 0, 0}) * R0;//第一帧 yaw赋0
     g = R0 * g;
     //Matrix3d rot_diff = R0 * Rs[0].transpose();
     Matrix3d rot_diff = R0;
@@ -447,7 +463,7 @@ bool Estimator::visualInitialAlign()
     {
         Ps[i] = rot_diff * Ps[i];
         Rs[i] = rot_diff * Rs[i];
-        Vs[i] = rot_diff * Vs[i];
+        Vs[i] = rot_diff * Vs[i];//全部对齐到重力下，同时yaw角对齐到第0帧
     }
     ROS_DEBUG_STREAM("g0     " << g.transpose());
     ROS_DEBUG_STREAM("my R0  " << Utility::R2ypr(Rs[0]).transpose()); 
