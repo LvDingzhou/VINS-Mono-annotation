@@ -9,6 +9,7 @@
 
 #include <ceres/ceres.h>
 
+//残差costfuntion必须得继承`SizedCostFunction`
 class IMUFactor : public ceres::SizedCostFunction<15, 7, 9, 7, 9>
 {
   public:
@@ -16,9 +17,10 @@ class IMUFactor : public ceres::SizedCostFunction<15, 7, 9, 7, 9>
     IMUFactor(IntegrationBase* _pre_integration):pre_integration(_pre_integration)
     {
     }
+    //残差和雅可比的计算（自定义的方式）
     virtual bool Evaluate(double const *const *parameters, double *residuals, double **jacobians) const
     {
-
+        //i表示前一帧，j表示后一帧
         Eigen::Vector3d Pi(parameters[0][0], parameters[0][1], parameters[0][2]);
         Eigen::Quaterniond Qi(parameters[0][6], parameters[0][3], parameters[0][4], parameters[0][5]);
 

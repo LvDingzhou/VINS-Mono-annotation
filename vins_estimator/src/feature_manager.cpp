@@ -213,7 +213,7 @@ VectorXd FeatureManager::getDepthVector()
         dep_vec(++feature_index) = it_per_id->estimated_depth;
 #endif
     }
-    return dep_vec;
+    return dep_vec;//维护的是逆深度
 }
 
 void FeatureManager::triangulate(Vector3d Ps[], Vector3d tic[], Matrix3d ric[])

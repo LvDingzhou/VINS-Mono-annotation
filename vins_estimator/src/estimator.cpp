@@ -444,6 +444,7 @@ bool Estimator::visualInitialAlign()
         }
     }
     //把尺度模糊的3d点恢复到真实尺度下
+    //把尺度模糊的3d点恢复到真实尺度下
     for (auto &it_per_id : f_manager.feature)
     {
         it_per_id.used_num = it_per_id.feature_per_frame.size();
@@ -509,8 +510,10 @@ bool Estimator::relativePose(Matrix3d &relative_R, Vector3d &relative_T, int &l)
     return false;
 }
 
+//里程计！
 void Estimator::solveOdometry()
 {
+    //保证滑窗中帧数满了
     if (frame_count < WINDOW_SIZE)
         return;
     if (solver_flag == NON_LINEAR)
@@ -523,7 +526,8 @@ void Estimator::solveOdometry()
 }
 
 void Estimator::vector2double()
-{
+{   
+    //KF的位姿
     for (int i = 0; i <= WINDOW_SIZE; i++)
     {
         para_Pose[i][0] = Ps[i].x();
@@ -547,6 +551,7 @@ void Estimator::vector2double()
         para_SpeedBias[i][7] = Bgs[i].y();
         para_SpeedBias[i][8] = Bgs[i].z();
     }
+    //外参
     for (int i = 0; i < NUM_OF_CAM; i++)
     {
         para_Ex_Pose[i][0] = tic[i].x();
@@ -558,10 +563,11 @@ void Estimator::vector2double()
         para_Ex_Pose[i][5] = q.z();
         para_Ex_Pose[i][6] = q.w();
     }
-
+    //特征点逆深度
     VectorXd dep = f_manager.getDepthVector();
     for (int i = 0; i < f_manager.getFeatureCount(); i++)
         para_Feature[i][0] = dep(i);
+    //传感器时间同步
     if (ESTIMATE_TD)
         para_Td[0][0] = td;
 }
@@ -711,10 +717,13 @@ void Estimator::optimization()
     ceres::Problem problem;
     ceres::LossFunction *loss_function;
     //loss_function = new ceres::HuberLoss(1.0);
-    loss_function = new ceres::CauchyLoss(1.0);
+    loss_function = new ceres::CauchyLoss(1.0);//柯西核函数（对外点抑制最猛的核函数咧）
+    //step1 定义待优化的参数块，类似g2o的顶点
     for (int i = 0; i < WINDOW_SIZE + 1; i++)
     {
+        //自定义加法
         ceres::LocalParameterization *local_parameterization = new PoseLocalParameterization();
+        //pose是位姿;增加参数块:二维数组的指针，每个参数块的大小，自增方法
         problem.AddParameterBlock(para_Pose[i], SIZE_POSE, local_parameterization);
         problem.AddParameterBlock(para_SpeedBias[i], SIZE_SPEEDBIAS);
     }
@@ -725,11 +734,13 @@ void Estimator::optimization()
         if (!ESTIMATE_EXTRINSIC)
         {
             ROS_DEBUG("fix extinsic param");
+            //如果不需要优化外参就设置为fix
             problem.SetParameterBlockConstant(para_Ex_Pose[i]);
         }
         else
             ROS_DEBUG("estimate extinsic param");
     }
+    //传感器的时间同步
     if (ESTIMATE_TD)
     {
         problem.AddParameterBlock(para_Td[0], 1);
@@ -737,6 +748,7 @@ void Estimator::optimization()
     }
 
     TicToc t_whole, t_prepare;
+    //Ceres只对double数组进行操作
     vector2double();
 
     if (last_marginalization_info)
@@ -747,9 +759,11 @@ void Estimator::optimization()
                                  last_marginalization_parameter_blocks);
     }
 
+    //imu预积分的约束
     for (int i = 0; i < WINDOW_SIZE; i++)
     {
         int j = i + 1;
+        //预积分超过10s，这个约束就不可信了（只有几百毫秒的保质期）
         if (pre_integrations[j]->sum_dt > 10.0)
             continue;
         IMUFactor* imu_factor = new IMUFactor(pre_integrations[j]);
@@ -782,6 +796,7 @@ void Estimator::optimization()
                     ProjectionTdFactor *f_td = new ProjectionTdFactor(pts_i, pts_j, it_per_id.feature_per_frame[0].velocity, it_per_frame.velocity,
                                                                      it_per_id.feature_per_frame[0].cur_td, it_per_frame.cur_td,
                                                                      it_per_id.feature_per_frame[0].uv.y(), it_per_frame.uv.y());
+                    //这里面会自动将一些入参加入参数块儿
                     problem.AddResidualBlock(f_td, loss_function, para_Pose[imu_i], para_Pose[imu_j], para_Ex_Pose[0], para_Feature[feature_index], para_Td[0]);
                     /*
                     double **para = new double *[5];
