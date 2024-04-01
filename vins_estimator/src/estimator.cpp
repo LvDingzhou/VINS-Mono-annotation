@@ -881,12 +881,16 @@ void Estimator::optimization()
 
     double2vector();
 
+    //step 4 边缘化
     TicToc t_whole_marginalization;
     if (marginalization_flag == MARGIN_OLD)
     {
+        //一个用来边缘化操作的对象
         MarginalizationInfo *marginalization_info = new MarginalizationInfo();
         vector2double();
+        //1.找到边缘化的参数块
 
+        //上一个边缘化的结果
         if (last_marginalization_info)
         {
             vector<int> drop_set;
@@ -904,18 +908,20 @@ void Estimator::optimization()
 
             marginalization_info->addResidualBlockInfo(residual_block_info);
         }
-
+        //只有第一个预积分和待边缘化参数块相连
         {
+            //预积分累计积分的时间跨度不能超过10ms
             if (pre_integrations[1]->sum_dt < 10.0)
             {
+                //跟构建ceres约束问题一样，这里也需要构建残差和雅可比
                 IMUFactor* imu_factor = new IMUFactor(pre_integrations[1]);
                 ResidualBlockInfo *residual_block_info = new ResidualBlockInfo(imu_factor, NULL,
                                                                            vector<double *>{para_Pose[0], para_SpeedBias[0], para_Pose[1], para_SpeedBias[1]},
-                                                                           vector<int>{0, 1});
+                                                                           vector<int>{0, 1});//这里面说的是第0和1个参数是要被边缘化的
                 marginalization_info->addResidualBlockInfo(residual_block_info);
             }
         }
-
+        //遍历视觉重投影的约束
         {
             int feature_index = -1;
             for (auto &it_per_id : f_manager.feature)
@@ -927,15 +933,16 @@ void Estimator::optimization()
                 ++feature_index;
 
                 int imu_i = it_per_id.start_frame, imu_j = imu_i - 1;
+                //找到被第0帧看到的特征点
                 if (imu_i != 0)
                     continue;
 
                 Vector3d pts_i = it_per_id.feature_per_frame[0].point;
-
+                //遍历看到这个特征点的所有KF，通过这个特征点，建立和第0帧的约束
                 for (auto &it_per_frame : it_per_id.feature_per_frame)
                 {
                     imu_j++;
-                    if (imu_i == imu_j)
+                    if (imu_i == imu_j)//自己和自己不能构成重投影约束
                         continue;
 
                     Vector3d pts_j = it_per_frame.point;
@@ -954,7 +961,7 @@ void Estimator::optimization()
                         ProjectionFactor *f = new ProjectionFactor(pts_i, pts_j);
                         ResidualBlockInfo *residual_block_info = new ResidualBlockInfo(f, loss_function,
                                                                                        vector<double *>{para_Pose[imu_i], para_Pose[imu_j], para_Ex_Pose[0], para_Feature[feature_index]},
-                                                                                       vector<int>{0, 3});
+                                                                                       vector<int>{0, 3});//残差块信息，这里第0帧和地图点被margin
                         marginalization_info->addResidualBlockInfo(residual_block_info);
                     }
                 }

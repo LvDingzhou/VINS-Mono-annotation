@@ -86,23 +86,28 @@ MarginalizationInfo::~MarginalizationInfo()
     }
 }
 
+/// @brief 收集各个残差
+/// @param residual_block_info 
 void MarginalizationInfo::addResidualBlockInfo(ResidualBlockInfo *residual_block_info)
 {
-    factors.emplace_back(residual_block_info);
+    factors.emplace_back(residual_block_info);//残差块收集起来
 
-    std::vector<double *> &parameter_blocks = residual_block_info->parameter_blocks;
-    std::vector<int> parameter_block_sizes = residual_block_info->cost_function->parameter_block_sizes();
+    std::vector<double *> &parameter_blocks = residual_block_info->parameter_blocks;//获得参数块的起始地址
+    std::vector<int> parameter_block_sizes = residual_block_info->cost_function->parameter_block_sizes();//通过ceress的接口获得每个参数块大小
 
-    for (int i = 0; i < static_cast<int>(residual_block_info->parameter_blocks.size()); i++)
+    for (int i = 0; i < static_cast<int>(residual_block_info->parameter_blocks.size()); i++)//遍历每个参数块
     {
-        double *addr = parameter_blocks[i];
-        int size = parameter_block_sizes[i];
+        double *addr = parameter_blocks[i];//先拿到参数块的首地址
+        int size = parameter_block_sizes[i];//拿到参数块的大小
+        //**这里是一个unordered map（哈希表），避免重复添加**
         parameter_block_size[reinterpret_cast<long>(addr)] = size;
     }
-
+    
+    //待边缘化的参数块
     for (int i = 0; i < static_cast<int>(residual_block_info->drop_set.size()); i++)
     {
         double *addr = parameter_blocks[residual_block_info->drop_set[i]];
+        //先准备好待边缘化的参数块的unordered map
         parameter_block_idx[reinterpret_cast<long>(addr)] = 0;
     }
 }
