@@ -572,6 +572,7 @@ void Estimator::vector2double()
         para_Td[0][0] = td;
 }
 
+/// @brief double->eigen 同时fix第一帧的yaw和平移，固定了四自由度的零空间
 void Estimator::double2vector()
 {
     Vector3d origin_R0 = Utility::R2ypr(Rs[0]);
@@ -587,9 +588,10 @@ void Estimator::double2vector()
                                                       para_Pose[0][3],
                                                       para_Pose[0][4],
                                                       para_Pose[0][5]).toRotationMatrix());
-    double y_diff = origin_R0.x() - origin_R00.x();
+    double y_diff = origin_R0.x() - origin_R00.x();//固定最老帧的yaw
     //TODO
     Matrix3d rot_diff = Utility::ypr2R(Vector3d(y_diff, 0, 0));
+    //防止万象节死锁
     if (abs(abs(origin_R0.y()) - 90) < 1.0 || abs(abs(origin_R00.y()) - 90) < 1.0)
     {
         ROS_DEBUG("euler singular point!");
@@ -601,9 +603,9 @@ void Estimator::double2vector()
 
     for (int i = 0; i <= WINDOW_SIZE; i++)
     {
-
+        //保持第1帧的yaw不变
         Rs[i] = rot_diff * Quaterniond(para_Pose[i][6], para_Pose[i][3], para_Pose[i][4], para_Pose[i][5]).normalized().toRotationMatrix();
-        
+        //保持第1帧的位移不变
         Ps[i] = rot_diff * Vector3d(para_Pose[i][0] - para_Pose[0][0],
                                 para_Pose[i][1] - para_Pose[0][1],
                                 para_Pose[i][2] - para_Pose[0][2]) + origin_P0;
@@ -774,15 +776,16 @@ void Estimator::optimization()
     for (auto &it_per_id : f_manager.feature)
     {
         it_per_id.used_num = it_per_id.feature_per_frame.size();
+        //经典的特征点有效性检查
         if (!(it_per_id.used_num >= 2 && it_per_id.start_frame < WINDOW_SIZE - 2))
             continue;
  
         ++feature_index;
-
+        //第一个观测到这个特征点的帧idx
         int imu_i = it_per_id.start_frame, imu_j = imu_i - 1;
-        
+        //特征点在第一帧下的归一化相机坐标系
         Vector3d pts_i = it_per_id.feature_per_frame[0].point;
-
+        //遍历看到这个特征点的所有KF
         for (auto &it_per_frame : it_per_id.feature_per_frame)
         {
             imu_j++;
@@ -791,7 +794,7 @@ void Estimator::optimization()
                 continue;
             }
             Vector3d pts_j = it_per_frame.point;
-            if (ESTIMATE_TD)
+            if (ESTIMATE_TD)//带优化TD的方式，这个后面再来看
             {
                     ProjectionTdFactor *f_td = new ProjectionTdFactor(pts_i, pts_j, it_per_id.feature_per_frame[0].velocity, it_per_frame.velocity,
                                                                      it_per_id.feature_per_frame[0].cur_td, it_per_frame.cur_td,
@@ -809,8 +812,9 @@ void Estimator::optimization()
                     */
             }
             else
-            {
+            {//对视觉重投影的优化
                 ProjectionFactor *f = new ProjectionFactor(pts_i, pts_j);
+                //公式已推导
                 problem.AddResidualBlock(f, loss_function, para_Pose[imu_i], para_Pose[imu_j], para_Ex_Pose[0], para_Feature[feature_index]);
             }
             f_m_cnt++;
@@ -819,7 +823,7 @@ void Estimator::optimization()
 
     ROS_DEBUG("visual measurement count: %d", f_m_cnt);
     ROS_DEBUG("prepare for ceres: %f", t_prepare.toc());
-
+    //回环检测约束
     if(relocalization_info)
     {
         //printf("set relocalization factor! \n");
@@ -853,17 +857,18 @@ void Estimator::optimization()
         }
 
     }
-
+    //step3 ceres优化求解
     ceres::Solver::Options options;
 
-    options.linear_solver_type = ceres::DENSE_SCHUR;
+    options.linear_solver_type = ceres::DENSE_SCHUR;//稠密矩阵
     //options.num_threads = 2;
-    options.trust_region_strategy_type = ceres::DOGLEG;
+    options.trust_region_strategy_type = ceres::DOGLEG;//求解类型用dogleg；GN,LM
     options.max_num_iterations = NUM_ITERATIONS;
     //options.use_explicit_schur_complement = true;
     //options.minimizer_progress_to_stdout = true;
     //options.use_nonmonotonic_steps = true;
     if (marginalization_flag == MARGIN_OLD)
+        //**下面的边缘化老的操作比较多，所以减少一些优化时间**
         options.max_solver_time_in_seconds = SOLVER_TIME * 4.0 / 5.0;
     else
         options.max_solver_time_in_seconds = SOLVER_TIME;
