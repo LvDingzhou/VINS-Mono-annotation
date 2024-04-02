@@ -752,6 +752,7 @@ void Estimator::optimization()
     TicToc t_whole, t_prepare;
     //Ceres只对double数组进行操作
     vector2double();
+    //step 2 通过残差约束来添加残差块，类似g2o的边
 
     if (last_marginalization_info)
     {
@@ -980,7 +981,7 @@ void Estimator::optimization()
         marginalization_info->marginalize();
         ROS_DEBUG("marginalization %f ms", t_margin.toc());
 
-        std::unordered_map<long, double *> addr_shift;
+        std::unordered_map<long, double *> addr_shift;//哈希表
         for (int i = 1; i <= WINDOW_SIZE; i++)
         {
             addr_shift[reinterpret_cast<long>(para_Pose[i])] = para_Pose[i - 1];
@@ -996,14 +997,14 @@ void Estimator::optimization()
 
         if (last_marginalization_info)
             delete last_marginalization_info;
-        last_marginalization_info = marginalization_info;
+        last_marginalization_info = marginalization_info;//本次边缘化的所有信息
         last_marginalization_parameter_blocks = parameter_blocks;
         
     }
-    else
+    else //边缘化倒数第二帧（总不可能边缘化最新帧呀）
     {
         if (last_marginalization_info &&
-            std::count(std::begin(last_marginalization_parameter_blocks), std::end(last_marginalization_parameter_blocks), para_Pose[WINDOW_SIZE - 1]))
+            std::count(std::begin(last_marginalization_parameter_blocks), std::end(last_marginalization_parameter_blocks), para_Pose[WINDOW_SIZE - 1]))//倒数第二帧被边缘化之前发现有先验约束（这一帧被约束了）
         {
 
             MarginalizationInfo *marginalization_info = new MarginalizationInfo();
@@ -1013,11 +1014,14 @@ void Estimator::optimization()
                 vector<int> drop_set;
                 for (int i = 0; i < static_cast<int>(last_marginalization_parameter_blocks.size()); i++)
                 {
+                    //速度零偏只会margin第一个，不可能出现倒数第二个
                     ROS_ASSERT(last_marginalization_parameter_blocks[i] != para_SpeedBias[WINDOW_SIZE - 1]);
+                    //这种case只会margin掉倒数第二个位姿
                     if (last_marginalization_parameter_blocks[i] == para_Pose[WINDOW_SIZE - 1])
                         drop_set.push_back(i);
                 }
                 // construct new marginlization_factor
+                //更新先验约束，即margin factor
                 MarginalizationFactor *marginalization_factor = new MarginalizationFactor(last_marginalization_info);
                 ResidualBlockInfo *residual_block_info = new ResidualBlockInfo(marginalization_factor, NULL,
                                                                                last_marginalization_parameter_blocks,
@@ -1025,7 +1029,7 @@ void Estimator::optimization()
 
                 marginalization_info->addResidualBlockInfo(residual_block_info);
             }
-
+            //这里操作是一样的，预处理，边缘化
             TicToc t_pre_margin;
             ROS_DEBUG("begin marginalization");
             marginalization_info->preMarginalize();
@@ -1041,7 +1045,7 @@ void Estimator::optimization()
             {
                 if (i == WINDOW_SIZE - 1)
                     continue;
-                else if (i == WINDOW_SIZE)
+                else if (i == WINDOW_SIZE)//滑窗一下，最新帧变为次新帧
                 {
                     addr_shift[reinterpret_cast<long>(para_Pose[i])] = para_Pose[i - 1];
                     addr_shift[reinterpret_cast<long>(para_SpeedBias[i])] = para_SpeedBias[i - 1];
@@ -1075,7 +1079,7 @@ void Estimator::optimization()
 void Estimator::slideWindow()
 {
     TicToc t_margin;
-    if (marginalization_flag == MARGIN_OLD)
+    if (marginalization_flag == MARGIN_OLD)//去掉最老帧
     {
         double t_0 = Headers[0].stamp.toSec();
         back_R0 = Rs[0];
@@ -1084,9 +1088,9 @@ void Estimator::slideWindow()
         {
             for (int i = 0; i < WINDOW_SIZE; i++)
             {
-                Rs[i].swap(Rs[i + 1]);
+                Rs[i].swap(Rs[i + 1]);//swap是交换的意思
 
-                std::swap(pre_integrations[i], pre_integrations[i + 1]);
+                std::swap(pre_integrations[i], pre_integrations[i + 1]);//swap是交换的意思
 
                 dt_buf[i].swap(dt_buf[i + 1]);
                 linear_acceleration_buf[i].swap(linear_acceleration_buf[i + 1]);
@@ -1130,10 +1134,10 @@ void Estimator::slideWindow()
                 all_image_frame.erase(t_0);
 
             }
-            slideWindowOld();
+            slideWindowOld();//保留最老帧看到的路标点，重新找归宿
         }
     }
-    else
+    else//去掉次新帧
     {
         if (frame_count == WINDOW_SIZE)
         {

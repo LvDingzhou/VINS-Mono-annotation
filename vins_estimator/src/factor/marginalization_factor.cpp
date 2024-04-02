@@ -286,23 +286,28 @@ void MarginalizationInfo::marginalize()
 
 
     //TODO
-    //这个操作保证了矩阵的正定性，因为在舒尔补中，H矩阵中的左上块儿是cap_lambdaA,这个cap_lambdaA是要进行逆操作的
+    //这个操作保证了矩阵的正定性，因为在舒尔补中，H矩阵中的左上块儿是cap_lambda_a,这个cap_lambda_a是要进行逆操作的
     Eigen::MatrixXd Amm = 0.5 * (A.block(0, 0, m, m) + A.block(0, 0, m, m).transpose());
-    Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> saes(Amm);
+    Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> saes(Amm);//特征值分解
 
     //ROS_ASSERT_MSG(saes.eigenvalues().minCoeff() >= -1e-4, "min eigenvalue %f", saes.eigenvalues().minCoeff());
-
+    
+    //(condition).select(A,B) == condition?A:B
+    //利用特征值取逆来构造其逆矩阵
     Eigen::MatrixXd Amm_inv = saes.eigenvectors() * Eigen::VectorXd((saes.eigenvalues().array() > eps).select(saes.eigenvalues().array().inverse(), 0)).asDiagonal() * saes.eigenvectors().transpose();
     //printf("error1: %f\n", (Amm * Amm_inv - Eigen::MatrixXd::Identity(m, m)).sum());
 
-    Eigen::VectorXd bmm = b.segment(0, m);
-    Eigen::MatrixXd Amr = A.block(0, m, m, n);
-    Eigen::MatrixXd Arm = A.block(m, 0, n, m);
-    Eigen::MatrixXd Arr = A.block(m, m, n, n);
-    Eigen::VectorXd brr = b.segment(m, n);
+    //这一块儿就是得到了舒尔补之后的方程形式，笔记21.1-cui(42)
+    Eigen::VectorXd bmm = b.segment(0, m);//待边缘化大小g_a
+    Eigen::MatrixXd Amr = A.block(0, m, m, n);//cap_lambda_b
+    Eigen::MatrixXd Arm = A.block(m, 0, n, m);//cap_lambda_b^T
+    Eigen::MatrixXd Arr = A.block(m, m, n, n);//cap_lambda_c
+    Eigen::VectorXd brr = b.segment(m, n);//g_b
+    //构成了新的Ax=b,或者说是H'*deltax=g'
     A = Arr - Arm * Amm_inv * Amr;
     b = brr - Arm * Amm_inv * bmm;
 
+    //这里面求H'*deltax=g'的jacobi和残差e
     Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> saes2(A);
     Eigen::VectorXd S = Eigen::VectorXd((saes2.eigenvalues().array() > eps).select(saes2.eigenvalues().array(), 0));
     Eigen::VectorXd S_inv = Eigen::VectorXd((saes2.eigenvalues().array() > eps).select(saes2.eigenvalues().array().inverse(), 0));
@@ -310,6 +315,7 @@ void MarginalizationInfo::marginalize()
     Eigen::VectorXd S_sqrt = S.cwiseSqrt();
     Eigen::VectorXd S_inv_sqrt = S_inv.cwiseSqrt();
 
+    //这就是H'*deltax=g'新的jacobi和残差e
     linearized_jacobians = S_sqrt.asDiagonal() * saes2.eigenvectors().transpose();
     linearized_residuals = S_inv_sqrt.asDiagonal() * saes2.eigenvectors().transpose() * b;
     //std::cout << A << std::endl
@@ -330,10 +336,10 @@ std::vector<double *> MarginalizationInfo::getParameterBlocks(std::unordered_map
     {
         if (it.second >= m)
         {
-            keep_block_size.push_back(parameter_block_size[it.first]);
-            keep_block_idx.push_back(parameter_block_idx[it.first]);
+            keep_block_size.push_back(parameter_block_size[it.first]);//留下来的参数块大小global size
+            keep_block_idx.push_back(parameter_block_idx[it.first]);//留下来的原向量中的索引
             keep_block_data.push_back(parameter_block_data[it.first]);
-            keep_block_addr.push_back(addr_shift[it.first]);
+            keep_block_addr.push_back(addr_shift[it.first]);//对应的新地址
         }
     }
     sum_block_size = std::accumulate(std::begin(keep_block_size), std::end(keep_block_size), 0);
@@ -344,13 +350,13 @@ std::vector<double *> MarginalizationInfo::getParameterBlocks(std::unordered_map
 MarginalizationFactor::MarginalizationFactor(MarginalizationInfo* _marginalization_info):marginalization_info(_marginalization_info)
 {
     int cnt = 0;
-    for (auto it : marginalization_info->keep_block_size)
+    for (auto it : marginalization_info->keep_block_size)//keep_block_size表示上一次边缘化留下来的参数块大小
     {
-        mutable_parameter_block_sizes()->push_back(it);
+        mutable_parameter_block_sizes()->push_back(it);//调用ceres
         cnt += it;
     }
     //printf("residual size: %d, %d\n", cnt, n);
-    set_num_residuals(marginalization_info->n);
+    set_num_residuals(marginalization_info->n);//留下来的参数块大小
 };
 
 bool MarginalizationFactor::Evaluate(double const *const *parameters, double *residuals, double **jacobians) const
@@ -369,7 +375,7 @@ bool MarginalizationFactor::Evaluate(double const *const *parameters, double *re
     for (int i = 0; i < static_cast<int>(marginalization_info->keep_block_size.size()); i++)
     {
         int size = marginalization_info->keep_block_size[i];
-        int idx = marginalization_info->keep_block_idx[i] - m;
+        int idx = marginalization_info->keep_block_idx[i] - m;//idx起点 统一到0
         Eigen::VectorXd x = Eigen::Map<const Eigen::VectorXd>(parameters[i], size);
         Eigen::VectorXd x0 = Eigen::Map<const Eigen::VectorXd>(marginalization_info->keep_block_data[i], size);
         if (size != 7)
