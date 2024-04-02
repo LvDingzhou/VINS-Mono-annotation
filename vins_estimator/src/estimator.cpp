@@ -889,7 +889,7 @@ void Estimator::optimization()
         MarginalizationInfo *marginalization_info = new MarginalizationInfo();
         vector2double();
         //1.找到边缘化的参数块
-
+        //1、将上一次先验残差项传递给marginalization_info
         //上一个边缘化的结果
         if (last_marginalization_info)
         {
@@ -908,7 +908,9 @@ void Estimator::optimization()
 
             marginalization_info->addResidualBlockInfo(residual_block_info);
         }
+
         //只有第一个预积分和待边缘化参数块相连
+        //2、将第0帧和第1帧间的IMU因子IMUFactor(pre_integrations[1])，添加到marginalization_info中
         {
             //预积分累计积分的时间跨度不能超过10ms
             if (pre_integrations[1]->sum_dt < 10.0)
@@ -922,6 +924,7 @@ void Estimator::optimization()
             }
         }
         //遍历视觉重投影的约束
+        //3、将第一次观测为第0帧的所有路标点对应的视觉观测，添加到marginalization_info中
         {
             int feature_index = -1;
             for (auto &it_per_id : f_manager.feature)
@@ -936,7 +939,7 @@ void Estimator::optimization()
                 //找到被第0帧看到的特征点
                 if (imu_i != 0)
                     continue;
-
+                //得到Pl投影到的首帧观测到的特征点的归一化相机坐标pts_i
                 Vector3d pts_i = it_per_id.feature_per_frame[0].point;
                 //遍历看到这个特征点的所有KF，通过这个特征点，建立和第0帧的约束
                 for (auto &it_per_frame : it_per_id.feature_per_frame)
@@ -968,6 +971,7 @@ void Estimator::optimization()
             }
         }
 
+        //这里有边缘化预处理的过程
         TicToc t_pre_margin;
         marginalization_info->preMarginalize();
         ROS_DEBUG("pre marginalization %f ms", t_pre_margin.toc());
