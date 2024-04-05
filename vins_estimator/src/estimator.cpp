@@ -174,6 +174,8 @@ void Estimator::processImage(const map<int, vector<pair<int, Eigen::Matrix<doubl
         if (frame_count == WINDOW_SIZE)
         {
             bool result = false;
+            //要有可信的外参值，同时距离上次初始化不成功至少相邻0.1s
+            //step3:VIO的初始化
             if( ESTIMATE_EXTRINSIC != 2 && (header.stamp.toSec() - initial_timestamp) > 0.1)//等到外参比较好的时候
             {
                result = initialStructure();//06-06
@@ -183,12 +185,12 @@ void Estimator::processImage(const map<int, vector<pair<int, Eigen::Matrix<doubl
             {
                 solver_flag = NON_LINEAR;
                 solveOdometry();//2.滑窗优化
-                slideWindow();
-                f_manager.removeFailures();
+                slideWindow();//3.滑窗操作
+                f_manager.removeFailures();//4.移除无效地图点
                 ROS_INFO("Initialization finish!");
-                last_R = Rs[WINDOW_SIZE];
+                last_R = Rs[WINDOW_SIZE];//滑窗中最新帧的位姿
                 last_P = Ps[WINDOW_SIZE];
-                last_R0 = Rs[0];
+                last_R0 = Rs[0];        //滑窗中最老帧的位姿
                 last_P0 = Ps[0];
                 
             }
@@ -203,7 +205,8 @@ void Estimator::processImage(const map<int, vector<pair<int, Eigen::Matrix<doubl
         TicToc t_solve;
         solveOdometry();
         ROS_DEBUG("solver costs: %fms", t_solve.toc());
-
+        
+        //检测VIO是否正常运行
         if (failureDetection())
         {
             ROS_WARN("failure detection!");
@@ -672,11 +675,13 @@ bool Estimator::failureDetection()
         ROS_INFO(" little feature %d", f_manager.last_track_num);
         //return true;
     }
+    //加速度零偏是否正常
     if (Bas[WINDOW_SIZE].norm() > 2.5)
     {
         ROS_INFO(" big IMU acc bias estimation %f", Bas[WINDOW_SIZE].norm());
         return true;
     }
+    //弧度零偏是否正常
     if (Bgs[WINDOW_SIZE].norm() > 1.0)
     {
         ROS_INFO(" big IMU gyr bias estimation %f", Bgs[WINDOW_SIZE].norm());
@@ -690,12 +695,12 @@ bool Estimator::failureDetection()
     }
     */
     Vector3d tmp_P = Ps[WINDOW_SIZE];
-    if ((tmp_P - last_P).norm() > 5)
+    if ((tmp_P - last_P).norm() > 5) //两帧之间运动是否过大
     {
         ROS_INFO(" big translation");
         return true;
     }
-    if (abs(tmp_P.z() - last_P.z()) > 1)
+    if (abs(tmp_P.z() - last_P.z()) > 1)//重力方向运动是否过大
     {
         ROS_INFO(" big z translation");
         return true; 
@@ -705,7 +710,7 @@ bool Estimator::failureDetection()
     Quaterniond delta_Q(delta_R);
     double delta_angle;
     delta_angle = acos(delta_Q.w()) * 2.0 / 3.14 * 180.0;
-    if (delta_angle > 50)
+    if (delta_angle > 50)//两帧位姿变化是否过大
     {
         ROS_INFO(" big delta_angle ");
         //return true;
@@ -754,7 +759,7 @@ void Estimator::optimization()
     vector2double();
     //step 2 通过残差约束来添加残差块，类似g2o的边
 
-    if (last_marginalization_info)
+    if (last_marginalization_info)//把上一次的边缘化因子放入Hessian矩阵中
     {
         // construct new marginlization_factor
         MarginalizationFactor *marginalization_factor = new MarginalizationFactor(last_marginalization_info);
@@ -887,6 +892,7 @@ void Estimator::optimization()
     if (marginalization_flag == MARGIN_OLD)
     {
         //一个用来边缘化操作的对象
+        //边缘化大管家
         MarginalizationInfo *marginalization_info = new MarginalizationInfo();
         vector2double();
         //1.找到边缘化的参数块
@@ -1118,6 +1124,7 @@ void Estimator::slideWindow()
 
             if (true || solver_flag == INITIAL)
             {
+                //预积分是堆上空间，因此需要手动释放
                 map<double, ImageFrame>::iterator it_0;
                 it_0 = all_image_frame.find(t_0);
                 delete it_0->second.pre_integration;
@@ -1129,7 +1136,7 @@ void Estimator::slideWindow()
                         delete it->second.pre_integration;
                     it->second.pre_integration = NULL;
                 }
-
+                //释放完空间之后再erase
                 all_image_frame.erase(all_image_frame.begin(), it_0);
                 all_image_frame.erase(t_0);
 
@@ -1143,17 +1150,18 @@ void Estimator::slideWindow()
         {
             for (unsigned int i = 0; i < dt_buf[frame_count].size(); i++)
             {
+                //合并预积分约束
                 double tmp_dt = dt_buf[frame_count][i];
                 Vector3d tmp_linear_acceleration = linear_acceleration_buf[frame_count][i];
                 Vector3d tmp_angular_velocity = angular_velocity_buf[frame_count][i];
 
-                pre_integrations[frame_count - 1]->push_back(tmp_dt, tmp_linear_acceleration, tmp_angular_velocity);
+                pre_integrations[frame_count - 1]->push_back(tmp_dt, tmp_linear_acceleration, tmp_angular_velocity);//手写的push_back
 
                 dt_buf[frame_count - 1].push_back(tmp_dt);
                 linear_acceleration_buf[frame_count - 1].push_back(tmp_linear_acceleration);
                 angular_velocity_buf[frame_count - 1].push_back(tmp_angular_velocity);
             }
-
+            //简单的滑窗交换
             Headers[frame_count - 1] = Headers[frame_count];
             Ps[frame_count - 1] = Ps[frame_count];
             Vs[frame_count - 1] = Vs[frame_count];
@@ -1161,9 +1169,10 @@ void Estimator::slideWindow()
             Bas[frame_count - 1] = Bas[frame_count];
             Bgs[frame_count - 1] = Bgs[frame_count];
 
+            //reset最新预积分量
             delete pre_integrations[WINDOW_SIZE];
             pre_integrations[WINDOW_SIZE] = new IntegrationBase{acc_0, gyr_0, Bas[WINDOW_SIZE], Bgs[WINDOW_SIZE]};
-
+            //clear相关buffer
             dt_buf[WINDOW_SIZE].clear();
             linear_acceleration_buf[WINDOW_SIZE].clear();
             angular_velocity_buf[WINDOW_SIZE].clear();
@@ -1180,6 +1189,8 @@ void Estimator::slideWindowNew()
     f_manager.removeFront(frame_count);
 }
 // real marginalization is removed in solve_ceres()
+
+/// @brief 因为地图点是由观察到它的第一帧管理的，所以当最老帧被margin的时候，这个地图点需要被其他帧接管
 void Estimator::slideWindowOld()
 {
     sum_of_back++;
@@ -1187,12 +1198,13 @@ void Estimator::slideWindowOld()
     bool shift_depth = solver_flag == NON_LINEAR ? true : false;
     if (shift_depth)
     {
+        //back_R0和back_P0是被移出的位姿 imu系下的
         Matrix3d R0, R1;
         Vector3d P0, P1;
-        R0 = back_R0 * ric[0];
-        R1 = Rs[0] * ric[0];
-        P0 = back_P0 + back_R0 * tic[0];
-        P1 = Ps[0] + Rs[0] * tic[0];
+        R0 = back_R0 * ric[0];//被移除的相机姿态
+        R1 = Rs[0] * ric[0];//当前最老的相机姿态
+        P0 = back_P0 + back_R0 * tic[0];//被移除的相机位姿
+        P1 = Ps[0] + Rs[0] * tic[0];//当前最老的相机位姿
         f_manager.removeBackShiftDepth(R0, P0, R1, P1);
     }
     else

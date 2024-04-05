@@ -90,6 +90,9 @@ void predict(const sensor_msgs::ImuConstPtr &imu_msg)
     gyr_0 = angular_velocity;
 }
 
+//用最新的VIO结果更新最新imu计算出来的位姿
+//从估计器中得到滑动窗口当前图像帧的imu更新项[P,Q,V,ba,bg,a,g]
+//对imu_buf中剩余的imu_msg进行PVQ递推
 void update()
 {
     TicToc t_predict;

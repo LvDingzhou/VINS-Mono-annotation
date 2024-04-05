@@ -181,7 +181,7 @@ void FeatureManager::removeFailures()
          it != feature.end(); it = it_next)
     {
         it_next++;
-        if (it->solve_flag == 2)
+        if (it->solve_flag == 2)//三角化失败的点
             feature.erase(it);
     }
 }
@@ -300,24 +300,24 @@ void FeatureManager::removeBackShiftDepth(Eigen::Matrix3d marg_R, Eigen::Vector3
     {
         it_next++;
 
-        if (it->start_frame != 0)
+        if (it->start_frame != 0) //如果不是被移出的帧看到的地图点，那么该地图对应的起始帧id减1
             it->start_frame--;
         else
         {
-            Eigen::Vector3d uv_i = it->feature_per_frame[0].point;  
-            it->feature_per_frame.erase(it->feature_per_frame.begin());
-            if (it->feature_per_frame.size() < 2)
+            Eigen::Vector3d uv_i = it->feature_per_frame[0].point;  //取出特征点的归一化相机坐标系坐标
+            it->feature_per_frame.erase(it->feature_per_frame.begin());//该点不再被原来的第一帧看到，因此从中移出
+            if (it->feature_per_frame.size() < 2)   //如果这个地图点没有至少被两帧看到
             {
-                feature.erase(it);
+                feature.erase(it);//移出它
                 continue;
             }
-            else
+            else //进行管辖权交接
             {
-                Eigen::Vector3d pts_i = uv_i * it->estimated_depth;
-                Eigen::Vector3d w_pts_i = marg_R * pts_i + marg_P;
-                Eigen::Vector3d pts_j = new_R.transpose() * (w_pts_i - new_P);
+                Eigen::Vector3d pts_i = uv_i * it->estimated_depth;//实际相机坐标系下的坐标
+                Eigen::Vector3d w_pts_i = marg_R * pts_i + marg_P;//转到世界坐标系下
+                Eigen::Vector3d pts_j = new_R.transpose() * (w_pts_i - new_P);//转到新的最老帧的相机坐标系下
                 double dep_j = pts_j(2);
-                if (dep_j > 0)
+                if (dep_j > 0)//查看深度是否有效
                     it->estimated_depth = dep_j;
                 else
                     it->estimated_depth = INIT_DEPTH;
@@ -333,6 +333,7 @@ void FeatureManager::removeBackShiftDepth(Eigen::Matrix3d marg_R, Eigen::Vector3
     }
 }
 
+/// @brief 初始化还没有结束，所以不进行地图点新的深度的换算，因为此时还没有视觉惯性对齐
 void FeatureManager::removeBack()
 {
     for (auto it = feature.begin(), it_next = feature.begin();
@@ -357,7 +358,7 @@ void FeatureManager::removeFront(int frame_count)
     {
         it_next++;
 
-        if (it->start_frame == frame_count)
+        if (it->start_frame == frame_count)//如果地图点被最后一帧看到，它的起始帧减1
         {
             it->start_frame--;
         }

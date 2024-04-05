@@ -153,7 +153,9 @@ int MarginalizationInfo::globalSize(int size) const
     return size == 6 ? 7 : size;
 }
 
-//手写后端
+/// @brief 构建边缘化的Hessian矩阵，建立一个空的Hessian矩阵然后把因子往里面填
+/// @param threadsstruct 
+/// @return 
 void* ThreadsConstructA(void* threadsstruct)
 {
     ThreadsStruct* p = ((ThreadsStruct*)threadsstruct);
@@ -190,6 +192,7 @@ void* ThreadsConstructA(void* threadsstruct)
 }
 
 /// @brief 多线程构造先验项舒尔补AX=b的结构，计算Jacobian和残差
+/// Schur掉需要marg的变量，得到对剩余变量的约束，即为边缘化约束
 void MarginalizationInfo::marginalize()
 {
     int pos = 0;
@@ -249,7 +252,7 @@ void MarginalizationInfo::marginalize()
     */
     //multi thread
 
-    //往A矩阵和b矩阵中填东西，利用多线程加速
+    //往H矩阵和b矩阵中填东西，利用多线程加速
     TicToc t_thread_summing;
     pthread_t tids[NUM_THREADS];
     ThreadsStruct threadsstruct[NUM_THREADS];
